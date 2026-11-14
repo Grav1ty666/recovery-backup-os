@@ -1,0 +1,22 @@
+﻿Recovery & Backup OS - error codes
+
+These are application-specific codes. They are not Windows system error codes.
+For technical details, inspect error-details.log in the project directory. Windows
+may return additional localized information in that log. If the project folder is
+read-only, the detail log may be unavailable.
+
+0xE0010001  Operation cancelled by the user.
+0xE0010002  Administrator privileges are required.
+0xE0010003  Secure Boot is enabled or cannot be checked.
+0xE0010004  BitLocker/encryption status blocks the operation or cannot be read.
+0xE0010005  Invalid selection or a disk cannot be uniquely identified.
+0xE0010006  Insufficient space, shrink limit, or invalid calculated size.
+0xE0010007  Required file, path, or image store is missing or inaccessible.
+0xE0010008  UEFI firmware entry registration or verification failed.
+0xE0010009  Disk, partition, volume, backup or identity check failed.
+0xE001000A  The deployment transcript could not be created.
+0xE0010010  The Windows launcher could not start the installer.
+0xE00100FF  Unclassified error; inspect error-details.log.
+
+Codes are broad diagnostic categories, not a guarantee of the root cause. If a
+failure occurs during deployment, some disk operations may already be complete.
