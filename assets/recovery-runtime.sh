@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 实验性 Clonezilla 运行组件；必须先在隔离虚拟机验证，不可直接用于真实电脑。
+# Clonezilla 运行组件；部分功能尚未完成端到端验证。
 # 配置格式见 recovery.conf.example；不执行 shell 格式的配置文件。
 set -Eeuo pipefail
 export LC_ALL=C

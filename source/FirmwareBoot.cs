@@ -1,4 +1,4 @@
-﻿// DRAFT: UEFI boot-option construction. Not wired into the installer.
+﻿// UEFI boot-option construction and removal.
 // This source was not validated on a Windows UEFI machine. Do not run on a real machine.
 using System;
 using System.ComponentModel;
@@ -6,7 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
-internal static class FirmwareBootDraft
+internal static class FirmwareBoot
 {
     const string GlobalGuid = "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}";
     const uint Attr = 7; // NON_VOLATILE | BOOTSERVICE_ACCESS | RUNTIME_ACCESS

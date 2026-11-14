@@ -1,4 +1,4 @@
-﻿# 未经验证的实验版；请仅在可丢弃的虚拟机中使用。
+﻿# 部分功能尚未完成端到端验证。
 # 使用未分配空间；不足时可经确认压缩 NTFS 卷。创建及固件写入各自确认。
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

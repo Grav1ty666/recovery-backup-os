@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the experimental GRUB EFI binary in a temporary directory; no disks are modified.
+# Build the GRUB EFI binary in a temporary directory; no disks are modified.
 set -euo pipefail
 project=$(cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d)
@@ -27,4 +27,4 @@ make -j"$(nproc)"
   --modules="part_gpt part_msdos fat ntfs linux chain normal search_fs_file lsefi test" \
   "boot/grub/grub.cfg=$project/source/grub-bootstrap.cfg"
 cp "$work/grubx64.efi" "$project/assets/grubx64.efi"
-printf '%s\n' 'Built experimental GRUB into assets/grubx64.efi.'
+printf '%s\n' 'Built GRUB into assets/grubx64.efi.'

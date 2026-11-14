@@ -1,4 +1,4 @@
-﻿Clonezilla Recovery — Windows 终端部署项目（实验版）
+﻿Clonezilla Recovery — Windows 终端部署项目
 
 使用前请完整阅读。部署会修改磁盘分区与 UEFI；恢复会覆盖 Windows 分区。请先在可擦除的虚拟机中使用，并准备独立备份。
 
@@ -26,12 +26,12 @@
 四、文件
 - RecoveryConsole.exe：管理员入口；RecoveryConsole.Worker.exe、FirmwareHelper.exe 与 installer.ps1 是运行所需组件。
 - assets：GRUB EFI、启动和恢复脚本。resources/live：Clonezilla Linux 内核、initrd 和 squashfs。
-- source：C#、PowerShell、GRUB 配置和恢复脚本源码。build-experimental.ps1 重新编译 Windows 程序并同步源码脚本；不会重新编译 GRUB 或下载 Clonezilla。
+- source：C#、PowerShell、GRUB 配置和恢复脚本源码。build.ps1 重新编译 Windows 程序并同步源码脚本；不会重新编译 GRUB 或下载 Clonezilla。
 - 本项目包含第三方 Clonezilla Live 和 GRUB 文件。分发时需遵守其各组件许可，并提供适用源码及许可证信息；请以实际 Clonezilla 版本的上游发布资料为准。
 
 - 新部署使用卷 GUID 路径访问 ESP，不主动分配盘符。如果系统意外分配盘符，安装会停止并提示人工检查。已有盘符保持不变。
 
-多系统扫描版是新构建的实验 GRUB，尚未经过虚拟机或实机端到端验证。不要在重要数据或唯一可启动系统上部署。source 包含新增扫描模块、GRUB 2.12 源码与独立 GRUB 构建脚本。
+多系统扫描版是新构建的 GRUB，尚未经过虚拟机或实机端到端验证。不要在重要数据或唯一可启动系统上部署。source 包含新增扫描模块、GRUB 2.12 源码与独立 GRUB 构建脚本。
 
 界面中的 GB 按 1 GB = 1024³ 字节计算；显示的是分区申请大小。格式化后 Windows 显示的文件系统容量可能略小。
 
