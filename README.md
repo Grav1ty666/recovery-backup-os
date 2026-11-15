@@ -17,6 +17,10 @@ Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezill
 
 本工具为开机菜单触发式备份和恢复，**不提供定时自动备份**。
 
+## 下载安装程序
+
+[下载 RecoveryBackupOS-Installer.exe](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Installer.exe)（Windows 安装程序）
+
 ## 下载
 
 项目的 Clonezilla 运行文件使用 Git LFS 存储。请使用下面的方法下载完整文件：
