@@ -1,5 +1,10 @@
 # Recovery & Backup OS
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/visual-identity/v1.0.0/reverse/backup-restore-app.svg">
+  <img src="assets/visual-identity/v1.0.0/original/backup-restore-app.svg" width="40" height="40" alt="Recovery &amp; Backup OS 应用图标">
+</picture>
+
 Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezilla 备份和恢复环境。
 
 > **使用风险由使用者自行承担。** 分区、UEFI 启动项和恢复操作可能造成数据丢失或无法启动；部分功能尚未完成端到端验证。请先在可擦除虚拟机中测试，并准备独立备份。
@@ -50,3 +55,5 @@ GRUB 多系统扫描、启动顺序管理、卸载及故障恢复尚未完成端
 ## 源码和构建
 
 `source` 包含 Windows 部署程序、恢复脚本和 GRUB 扩展源码。`build.ps1` 构建 Windows 可执行文件；GRUB 的构建说明见 `source/build-grub-multios.sh`。项目包含 Clonezilla、Linux、GRUB 和其他第三方组件，其许可和源码分发要求分别适用。
+
+应用图标来自视觉识别系统 `v1.0.0`。默认构建嵌入深色原稿。运行 `./build.ps1 -IconVariant reverse` 可嵌入白色反白。两版 SVG 和 ICO 位于 [`assets/visual-identity/v1.0.0/`](assets/visual-identity/v1.0.0/)。

@@ -1,12 +1,16 @@
 ﻿# 在包含 source、assets 和 resources 的项目文件夹中构建 Windows EXE。
 # GRUB 的 assets/grubx64.efi 由 grub-mkstandalone 单独构建；不自动访问互联网。
+param([ValidateSet('original', 'reverse')][string]$IconVariant = 'original')
+
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
+$Icon = Join-Path $Root "assets\visual-identity\v1.0.0\$IconVariant\backup-restore-app.ico"
+if (-not (Test-Path -LiteralPath $Icon)) { throw "缺少应用图标：$Icon" }
 $Compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $Compiler)) { throw '缺少 .NET Framework C# 编译器。' }
-& $Compiler /nologo /target:exe /platform:x64 /codepage:65001 "/out:$Root\RecoveryConsole.Worker.exe" "$Root\source\Worker.cs"
+& $Compiler /nologo /target:exe /platform:x64 /codepage:65001 "/win32icon:$Icon" "/out:$Root\RecoveryConsole.Worker.exe" "$Root\source\Worker.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Worker 编译失败。' }
-& $Compiler /nologo /target:winexe /platform:x64 /codepage:65001 "/win32manifest:$Root\source\admin.manifest" "/out:$Root\RecoveryConsole.exe" "$Root\source\Launcher.cs"
+& $Compiler /nologo /target:winexe /platform:x64 /codepage:65001 "/win32manifest:$Root\source\admin.manifest" "/win32icon:$Icon" "/out:$Root\RecoveryConsole.exe" "$Root\source\Launcher.cs"
 if ($LASTEXITCODE -ne 0) { throw 'Launcher 编译失败。' }
 & $Compiler /nologo /target:exe /platform:x64 /codepage:65001 "/out:$Root\FirmwareHelper.exe" "$Root\source\FirmwareHelper.cs" "$Root\source\FirmwareBoot.cs"
 if ($LASTEXITCODE -ne 0) { throw 'FirmwareHelper 编译失败。' }
