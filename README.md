@@ -24,7 +24,8 @@ Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezill
 
 ## 下载安装程序
 
-[下载 RecoveryBackupOS-Installer.exe](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Installer.exe)（Windows 安装程序）
+- [GitHub Releases 下载](https://github.com/Grav1ty666/recovery-backup-os/releases/latest/download/RecoveryBackupOS-Installer.exe)
+- [文件服务器镜像](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Installer.exe)
 
 ## 下载
 
@@ -57,3 +58,5 @@ GRUB 多系统扫描、启动顺序管理、卸载及故障恢复尚未完成端
 `source` 包含 Windows 部署程序、恢复脚本和 GRUB 扩展源码。`build.ps1` 构建 Windows 可执行文件；GRUB 的构建说明见 `source/build-grub-multios.sh`。项目包含 Clonezilla、Linux、GRUB 和其他第三方组件，其许可和源码分发要求分别适用。
 
 应用图标来自视觉识别系统 `v1.0.0`。默认构建嵌入深色原稿。运行 `./build.ps1 -IconVariant reverse` 可嵌入白色反白。两版 SVG 和 ICO 位于 [`assets/visual-identity/v1.0.0/`](assets/visual-identity/v1.0.0/)。
+
+构建 Windows 安装包时，先通过 Git LFS 取回运行文件，再运行 `build.ps1`，最后用 Inno Setup 编译 `recovery-setup.iss`。安装程序输出到 `dist/`。
