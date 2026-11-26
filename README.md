@@ -4,6 +4,14 @@ Windows 终端部署工具，在 x86-64 UEFI/GPT 设备上部署 Clonezilla 备�
 
 **使用风险由使用者自行承担。** 分区、UEFI 启动项及恢复操作可能导致数据丢失或无法启动。部分功能尚未完成端到端验证，请先在可擦除的虚拟机中验证，并另行备份重要数据。
 
+## 版本下载与更新
+
+所有已发布版本和详细更新说明可在 [GitHub Releases](https://github.com/Grav1ty666/recovery-backup-os/releases) 查看：
+
+- [v1.1.0](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.1.0)：新增备份存储方式和已有分区卸载逻辑，启动时优先使用 Windows Terminal。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.1.0.exe)
+- [v1.0.1](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1)：更新安装器与程序的视觉图标。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
+- [v1.0.0](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0)：首个发布版本。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.0.exe)
+
 ## 功能
 
 - 支持新建隐藏备份分区、新建可见备份分区，或将镜像存入独立的已有可见数据分区目录。
