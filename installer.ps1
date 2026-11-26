@@ -1,4 +1,4 @@
-﻿# 部分功能尚未完成端到端验证。
+# 部分功能尚未完成端到端验证。
 # 使用未分配空间；不足时可经确认压缩 NTFS 卷。创建及固件写入各自确认。
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -19,7 +19,7 @@ foreach ($logDir in @((Join-Path $Project 'logs'), (Join-Path $env:LOCALAPPDATA 
         break
     } catch { }
 }
-if (-not $TranscriptStarted) { Write-Warning '0xE001000A' }
+if (-not $TranscriptStarted) { Write-Warning '0xE001000A: The deployment transcript could not be created.' }
 $script:DiskChangesStarted = $false
 # Product-specific codes; detailed errors go to the project log.
 function Get-ProductErrorCode([string]$Message) {
@@ -36,12 +36,28 @@ function Get-ProductErrorCode([string]$Message) {
         default { return '0xE00100FF' }
     }
 }
+function Get-ProductErrorReason([string]$Code) {
+    switch ($Code) {
+        '0xE0010001' { 'Operation cancelled by the user.' }
+        '0xE0010002' { 'Administrator privileges are required.' }
+        '0xE0010003' { 'Secure Boot is enabled or cannot be checked.' }
+        '0xE0010004' { 'BitLocker/encryption status blocks the operation or cannot be read.' }
+        '0xE0010005' { 'Invalid selection or a disk cannot be uniquely identified.' }
+        '0xE0010006' { 'Insufficient space, shrink limit, or invalid calculated size.' }
+        '0xE0010007' { 'Required file, path, or image store is missing or inaccessible.' }
+        '0xE0010008' { 'UEFI firmware entry registration or verification failed.' }
+        '0xE0010009' { 'Disk, partition, volume, backup or identity check failed.' }
+        '0xE001000A' { 'The deployment transcript could not be created.' }
+        '0xE0010010' { 'The Windows launcher could not start the installer.' }
+        default { 'Unclassified error; inspect error-details.log.' }
+    }
+}
 function Log-Detail([string]$Code, [string]$Detail) {
     try { Add-Content -LiteralPath (Join-Path $Project 'error-details.log') -Value ("{0:s} {1} {2}" -f (Get-Date),$Code,$Detail) -Encoding UTF8 } catch { }
 }
 function Report-Detail([string]$Code, [string]$Detail) {
     Log-Detail $Code $Detail
-    Write-Host ('  Error: ' + $Code) -ForegroundColor Yellow
+    Write-Host ('  Error: ' + $Code + ' - ' + (Get-ProductErrorReason $Code)) -ForegroundColor Yellow
 }
 function Confirm-Enter([string]$Message) {
     Write-Host "  $Message (press Enter to continue; any other key cancels)" -NoNewline
@@ -134,6 +150,114 @@ function Export-LatestRecoveryLog($Volume) {
     [IO.File]::Copy($logs[0], $out, $false)
     Write-Host "  Recovery log exported: $out"
 }
+
+function Get-StoreWarningText([string]$Token) {
+    return @(
+        'RECOVERY & BACKUP OS - IMPORTANT',
+        '',
+        'Do not delete, rename, move, or modify the RecoveryBackupOS folder or the files inside it.',
+        'This folder contains the system backup images needed for recovery.',
+        'If the folder or its contents are deleted or damaged, system recovery may no longer be possible.',
+        'Keep a separate backup of important files. Use the program uninstall option to remove its backup files.',
+        '',
+        'Deleting this warning file alone does not delete the backup images.',
+        ('Installation ID: ' + $Token),
+        ''
+    ) -join "`r`n"
+}
+function Get-StoreMode($BootVolume) {
+    $configPath = [IO.Path]::Combine([string]$BootVolume.Path, 'EFI\clonezilla\recovery.conf')
+    $cfg = [IO.File]::ReadAllText($configPath)
+    $m = [regex]::Matches($cfg, '(?m)^store_mode=([^\r\n]+)\r?$')
+    if ($m.Count -eq 0) {
+        if ($cfg -match '(?m)^store_token=') { throw 'Storage mode missing; refusing legacy fallback.' }
+        return 'dedicated'
+    }
+    if ($m.Count -ne 1 -or $m[0].Groups[1].Value -notin @('existing','visible')) { throw 'Invalid store mode.' }
+    if ($m[0].Groups[1].Value -eq 'visible' -and $cfg -match '(?m)^store_token=') { throw 'Unexpected token for visible dedicated partition.' }
+    return $m[0].Groups[1].Value
+}
+function Get-ExistingStoreInfo($BootVolume) {
+    $configPath = [IO.Path]::Combine([string]$BootVolume.Path, 'EFI\clonezilla\recovery.conf')
+    $cfg = [IO.File]::ReadAllText($configPath)
+    $ids = [regex]::Matches($cfg, '(?m)^store_partuuid=([0-9a-fA-F-]{36})\r?$')
+    $tokens = [regex]::Matches($cfg, '(?m)^store_token=([0-9a-f]{32})\r?$')
+    if ($ids.Count -ne 1 -or $tokens.Count -ne 1) { throw 'Invalid existing store identity.' }
+    $id=$ids[0].Groups[1].Value; $token=$tokens[0].Groups[1].Value
+    $parts=@(Get-Partition | Where-Object { ([string]$_.Guid).Trim('{}') -ieq $id })
+    if ($parts.Count -ne 1 -or -not $parts[0].DriveLetter -or $parts[0].IsBoot -or $parts[0].IsSystem) { throw 'Existing storage partition is unavailable or unsafe.' }
+    $volume=Get-Volume -Partition $parts[0] -ErrorAction Stop
+    $root=[IO.Path]::Combine([string]$volume.Path,'RecoveryBackupOS')
+    if (-not [IO.Directory]::Exists($root) -or (([IO.File]::GetAttributes($root) -band [IO.FileAttributes]::ReparsePoint) -ne 0)) { throw 'Owned storage directory missing or is a reparse point.' }
+    $marker=[IO.Path]::Combine($root,'.recovery-backup-os-owner')
+    if (-not [IO.File]::Exists($marker) -or (([IO.File]::GetAttributes($marker) -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or [IO.File]::ReadAllText($marker).Trim() -cne $token) { throw 'Storage directory ownership marker mismatch.' }
+    return @{ Volume=$volume; Partition=$parts[0]; Root=$root; Config=$cfg; Token=$token }
+}
+function Pick-ExistingStore($WindowsPartition) {
+    $choices=@()
+    foreach ($part in @(Get-Partition)) {
+        if (-not $part.DriveLetter -or -not $part.Guid -or $part.IsBoot -or $part.IsSystem -or $part.IsHidden -or ([string]$part.GptType).Trim('{}') -ine 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7' -or [string]$part.Guid -eq [string]$WindowsPartition.Guid) { continue }
+        try {
+            $disk=Get-Disk -Number $part.DiskNumber; $volume=Get-Volume -Partition $part -ErrorAction Stop
+            if ($disk.PartitionStyle -ne 'GPT' -or $disk.IsOffline -or $disk.IsReadOnly -or $volume.FileSystem -notin @('NTFS','exFAT')) { continue }
+            $bit=Get-BitLockerVolume -MountPoint ($part.DriveLetter+':') -ErrorAction Stop
+            if ([string]$bit.VolumeStatus -ne 'FullyDecrypted') { continue }
+            if ([IO.Directory]::Exists([IO.Path]::Combine([string]$volume.Path,'RecoveryBackupOS'))) { continue }
+            $choices+=@{Partition=$part; Volume=$volume; Disk=$disk}
+            Write-Host ('  {0}: {1}: {2}, free {3:N2} GB' -f $choices.Count,$part.DriveLetter,$volume.FileSystem,($volume.SizeRemaining/1GB))
+        } catch { continue }
+    }
+    if ($choices.Count -eq 0) { return $null }
+    [int]$n=0
+    if (-not [int]::TryParse((Read-Host '  Select existing storage volume number'),[ref]$n) -or $n -lt 1 -or $n -gt $choices.Count) { throw 'Invalid storage volume selection.' }
+    return $choices[$n-1]
+}
+function Set-ExistingVolumeBaseline($BootVolume) {
+    $info=Get-ExistingStoreInfo $BootVolume
+    $images=[IO.Path]::Combine($info.Root,'partimag')
+    if (-not [IO.Directory]::Exists($images) -or (([IO.File]::GetAttributes($images) -band [IO.FileAttributes]::ReparsePoint) -ne 0)) { throw 'Image directory missing or unsafe.' }
+    $baseline=[IO.Path]::Combine($images,'BACKUP_OS')
+    if ([IO.Directory]::Exists($baseline) -or [IO.File]::Exists([IO.Path]::Combine($images,'.BACKUP_OS.incomplete'))) { throw 'Baseline or incomplete marker already exists.' }
+    $choices=@([IO.Directory]::GetDirectories($images) | Where-Object { [IO.Path]::GetFileName($_) -match '^auto_backup_[0-9]{8}_[0-9]{6}$' } | Sort-Object -Descending)
+    for($i=0;$i -lt $choices.Count;$i++) { Write-Host ('  {0}: {1}' -f ($i+1),[IO.Path]::GetFileName($choices[$i])) }
+    [int]$n=0
+    if ($choices.Count -eq 0 -or -not [int]::TryParse((Read-Host '  Select backup number'),[ref]$n) -or $n -lt 1 -or $n -gt $choices.Count) { throw 'Invalid backup selection.' }
+    $selected=$choices[$n-1];$name=[IO.Path]::GetFileName($selected)
+    if (([IO.File]::GetAttributes($selected) -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not [IO.File]::Exists([IO.Path]::Combine($selected,'parts')) -or [IO.File]::Exists([IO.Path]::Combine($images,'.'+$name+'.incomplete'))) { throw 'Selected image is incomplete or unsafe.' }
+    Write-Warning 'The selected image will become the baseline; its contents are not verified by this action.'
+    Confirm-Enter 'Confirm baseline selection'
+    $again=Get-ExistingStoreInfo $BootVolume
+    if ($again.Config -cne $info.Config -or [IO.Directory]::Exists($baseline) -or [IO.File]::Exists([IO.Path]::Combine($images,'.BACKUP_OS.incomplete')) -or [IO.File]::Exists([IO.Path]::Combine($images,'.'+$name+'.incomplete')) -or (([IO.File]::GetAttributes($selected) -band [IO.FileAttributes]::ReparsePoint) -ne 0)) { throw 'Store or image changed; baseline selection stopped.' }
+    [IO.Directory]::Move($selected,$baseline)
+}
+function Remove-ExistingStore($BootVolumes) {
+    if (@($BootVolumes).Count -ne 1) { throw 'Recovery ESP cannot be uniquely identified.' }
+    $bootVolume=@($BootVolumes)[0]; $info=Get-ExistingStoreInfo $bootVolume
+    $boots=@(Get-Partition -Volume $bootVolume -ErrorAction Stop)
+    if ($boots.Count -ne 1) { throw 'Recovery ESP cannot be uniquely identified.' }
+    $boot=$boots[0]; $store=$info.Partition; $disk=Get-Disk -Number $boot.DiskNumber
+    if (([string]$boot.GptType).Trim('{}') -ine 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b' -or $boot.IsBoot -or $boot.IsSystem -or -not $boot.Guid -or [string]$boot.Guid -eq [string]$store.Guid) { throw 'Unsafe recovery ESP.' }
+    Write-Warning ('The directory '+$info.Root+' and all files inside it will be permanently deleted. The existing storage partition will be retained.')
+    Confirm-Enter 'Confirm uninstall and deletion of the owned image directory'
+    $again=Get-ExistingStoreInfo $bootVolume; $current=Get-Partition -DiskNumber $boot.DiskNumber -PartitionNumber $boot.PartitionNumber
+    if ($again.Config -cne $info.Config -or [string]$again.Partition.Guid -ne [string]$store.Guid -or [string]$current.Guid -ne [string]$boot.Guid -or $current.Offset -ne $boot.Offset -or $current.Size -ne $boot.Size -or $current.IsSystem -or $current.IsBoot -or [string](Get-Disk -Number $boot.DiskNumber).UniqueId -ne [string]$disk.UniqueId) { throw 'Identity changed; uninstall stopped.' }
+    # Never recurse through junctions or symbolic links in the owned tree.
+    $pending=New-Object 'System.Collections.Generic.Stack[string]'; $pending.Push($info.Root)
+    while ($pending.Count -gt 0) { $dir=$pending.Pop(); foreach($entry in [IO.Directory]::EnumerateFileSystemEntries($dir)) { $attrs=[IO.File]::GetAttributes($entry); if (($attrs -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Reparse point found; uninstall refused.' }; if (($attrs -band [IO.FileAttributes]::Directory) -ne 0) { $pending.Push($entry) } } }
+    $script:DiskChangesStarted=$true
+    & (Join-Path $Project 'FirmwareHelper.exe') uninstall ([string]$boot.Guid)
+    if ($LASTEXITCODE -ne 0) { throw 'UEFI entry removal failed; no partition was removed.' }
+    $again=Get-ExistingStoreInfo $bootVolume
+    if ($again.Config -cne $info.Config) { throw 'Configuration changed; uninstall stopped.' }
+    [IO.Directory]::Delete($info.Root,$true)
+    $warning=[IO.Path]::Combine([string]$info.Volume.Path,'DO-NOT-DELETE-RecoveryBackupOS.txt')
+    if ([IO.File]::Exists($warning) -and (([IO.File]::GetAttributes($warning) -band [IO.FileAttributes]::ReparsePoint) -eq 0) -and [IO.File]::ReadAllText($warning) -ceq (Get-StoreWarningText $info.Token)) { [IO.File]::Delete($warning) }
+    $current=Get-Partition -DiskNumber $boot.DiskNumber -PartitionNumber $boot.PartitionNumber
+    if ([string]$current.Guid -ne [string]$boot.Guid -or $current.Offset -ne $boot.Offset -or $current.Size -ne $boot.Size -or $current.IsSystem -or $current.IsBoot) { throw 'Recovery ESP changed; deletion stopped.' }
+    Remove-Partition -DiskNumber $boot.DiskNumber -PartitionNumber $boot.PartitionNumber -Confirm:$false -ErrorAction Stop
+    Write-Host '  Uninstall complete. Existing storage partition retained.' -ForegroundColor Green
+}
+
 function Uninstall-Recovery($StoreVolume, $BootVolumes) {
     if (@($BootVolumes).Count -ne 1) { throw 'Recovery ESP cannot be uniquely identified.' }
     $bootVolume = @($BootVolumes)[0]
@@ -264,6 +388,23 @@ try {
         $_.FileSystemLabel -eq 'ESP' -and -not [string]::IsNullOrWhiteSpace([string]$_.Path) -and
         [IO.File]::Exists([IO.Path]::Combine([string]$_.Path, 'EFI\clonezilla\recovery.conf'))
     })
+    if ($existingBoot.Count -eq 1 -and (Get-StoreMode $existingBoot[0]) -eq 'existing') {
+        $info=Get-ExistingStoreInfo $existingBoot[0]
+        Write-Host ("  Existing volume image directory: {0}" -f $info.Root)
+        Write-Host '  1  Set baseline     2  Export log     3  Uninstall     Enter Exit'
+        $action=Read-Host '  Select an option'
+        if ($action -eq '1') { Set-ExistingVolumeBaseline $existingBoot[0] }
+        elseif ($action -eq '2') {
+            $folder=[IO.Path]::Combine($info.Root,'recovery_logs')
+            $logs=@([IO.Directory]::GetFiles($folder,'*.log') | Sort-Object { [IO.File]::GetLastWriteTimeUtc($_) } -Descending)
+            if ($logs.Count -eq 0) { throw 'No recovery logs found.' }
+            $outDir=Join-Path $Project 'logs'; New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+            $out=Join-Path $outDir ('recovery_export_{0}_{1}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'),$PID)
+            [IO.File]::Copy($logs[0],$out,$false); Write-Host "  Recovery log exported: $out"
+        } elseif ($action -eq '3') { Remove-ExistingStore $existingBoot }
+        return
+    }
+    if ($existingBoot.Count -gt 1) { throw 'Multiple recovery ESPs found; deployment stopped.' }
     if ($existingStores.Count -gt 0) {
         foreach ($existing in $existingStores) { Show-ExistingStore $existing }
         if ($existingStores.Count -gt 1) { Write-Warning 'Multiple backup volumes found; automatic selection is unsafe.' }
@@ -307,7 +448,30 @@ try {
     foreach ($name in $required) { if (-not (Test-Path -LiteralPath (Join-Path $Project $name) -PathType Leaf)) { throw "Missing file: $name" } }
     Write-Host "`n[2/4] Select disks" -ForegroundColor Cyan
     $espDisk = Pick-Disk 'Select the boot partition disk'
-    $storeDisk = Pick-Disk 'Select the backup partition disk (may be the same)'
+    Write-Host '  1  Dedicated hidden backup partition'
+    Write-Host '  2  Existing visible partition (RecoveryBackupOS directory)'
+    Write-Host '  3  Create a new visible backup partition'
+    $storeMode=Read-Host '  Select storage mode (1, 2 or 3)'
+    if ($storeMode -notin @('1','2','3')) { throw 'Invalid storage mode.' }
+    $chosenStore=$null; $storeToken=$null
+    if ($storeMode -eq '2') {
+        $chosenStore=Pick-ExistingStore $windows
+        if ($null -eq $chosenStore) {
+            Write-Host '  Error: 0xE0010009 - No eligible separate visible data partition is available.' -ForegroundColor Yellow
+            Write-Host '  The Windows partition cannot store its own restore image because restoring it would overwrite that image.'
+            Write-Host '  Eligible volumes must be visible, unencrypted GPT NTFS/exFAT data partitions without an existing RecoveryBackupOS folder.'
+            Write-Host '  0  Exit without making changes'
+            Write-Host '  1  Create a hidden backup partition'
+            Write-Host '  2  Create a visible backup partition'
+            $fallback=Read-Host '  Choose an option'
+            switch ($fallback) { '0' { throw 'Operation cancelled.' } '1' { $storeMode='1' } '2' { $storeMode='3' } default { throw 'Invalid selection.' } }
+        } else { $storeDisk=$chosenStore.Disk; $storeToken=[Guid]::NewGuid().ToString('N') }
+    }
+    if ($storeMode -in @('1','3')) { $storeDisk=Pick-Disk 'Select the backup partition disk (may be the same)' }
+    if ($storeMode -eq '2') {
+        $warningPath=[IO.Path]::Combine([string]$chosenStore.Volume.Path,'DO-NOT-DELETE-RecoveryBackupOS.txt')
+        if ([IO.File]::Exists($warningPath) -or [IO.Directory]::Exists($warningPath)) { throw 'The warning file already exists; refusing to overwrite it.' }
+    }
     # NTFS 已用量只是备份规模参考，压缩后的准确大小无法预知。
     $windowsVolume = Get-Volume -DriveLetter ($env:SystemDrive.Substring(0,1)) -ErrorAction SilentlyContinue
     if (-not $windowsVolume -or $windowsVolume.FileSystem -ne 'NTFS' -or $windowsVolume.Size -le 0 -or $windowsVolume.SizeRemaining -gt $windowsVolume.Size) { throw 'Cannot read Windows NTFS usage.' }
@@ -316,7 +480,9 @@ try {
     $sizeGB = [uint64]([math]::Ceiling((([double]$usedBytes / 1GB) * 0.6) / 10) * 10)
     if ($sizeGB -lt 1 -or $sizeGB -gt 100000) { throw 'Calculated backup partition size is invalid or too large.' }
     $storeBytes = [uint64]($sizeGB * 1GB)
-    if ($espDisk.Number -eq $storeDisk.Number) {
+    if ($storeMode -eq '2') {
+        $espPlan=Get-ShrinkPlan $espDisk ($EspBytes + 32MB); $storePlan=$null
+    } elseif ($espDisk.Number -eq $storeDisk.Number) {
         $espPlan = Get-ShrinkPlan $espDisk ($EspBytes + $storeBytes + 64MB)
         $storePlan = $null
     } else {
@@ -325,7 +491,8 @@ try {
     }
     Write-Host "`n[3/4] Review deployment" -ForegroundColor Cyan
     Write-Host ("  Boot: disk {0} ({1}), create and format 2 GB FAT32" -f $espDisk.Number,$espDisk.FriendlyName)
-    Write-Host ("  Backup: disk {0} ({1}), create and format {2} GB exFAT" -f $storeDisk.Number,$storeDisk.FriendlyName,$sizeGB)
+    if ($storeMode -in @('1','3')) { $visibility=if ($storeMode -eq '3') {'visible with drive letter'} else {'hidden without drive letter'}; Write-Host ("  Backup: disk {0} ({1}), create and format {2} GB exFAT, {3}" -f $storeDisk.Number,$storeDisk.FriendlyName,$sizeGB,$visibility) }
+    else { Write-Host ("  Backup: {0}:\RecoveryBackupOS on existing {1} volume; recommended free space {2} GB" -f $chosenStore.Partition.DriveLetter,$chosenStore.Volume.FileSystem,$sizeGB) }
     foreach ($plan in @($espPlan,$storePlan)) {
         if ($null -ne $plan) { Write-Host ("  Shrink disk {0}, {1}: from {2:N2} GB to {3:N2} GB" -f $plan.DiskNumber,$plan.Letter,($plan.OldSize/1GB),($plan.NewSize/1GB)) }
     }
@@ -335,7 +502,8 @@ try {
     Write-Host '  Preparing disk space...' -ForegroundColor Gray
     Apply-ShrinkPlan $espPlan
     Apply-ShrinkPlan $storePlan
-    if ($espDisk.Number -eq $storeDisk.Number) { Verify-Disk $espDisk ($EspBytes + $storeBytes + 64MB) }
+    if ($storeMode -eq '2') { Verify-Disk $espDisk ($EspBytes + 32MB) }
+    elseif ($espDisk.Number -eq $storeDisk.Number) { Verify-Disk $espDisk ($EspBytes + $storeBytes + 64MB) }
     else { Verify-Disk $espDisk ($EspBytes + 32MB); Verify-Disk $storeDisk ($storeBytes + 32MB) }
     Verify-Disk $espDisk ($EspBytes + 32MB)
     # 未格式化分区不分配盘符，避免资源管理器抢先弹出格式化提示。
@@ -352,17 +520,44 @@ try {
     $espVolume = Get-Volume -Partition $esp -ErrorAction Stop
     $espRoot = [string]$espVolume.Path
     if ([string]::IsNullOrWhiteSpace($espRoot) -or -not [IO.Directory]::Exists($espRoot)) { throw 'Boot partition volume GUID path unavailable.' }
-    Verify-Disk $storeDisk ($storeBytes + 32MB)
-    Write-Host '  Creating backup partition...' -ForegroundColor Gray
-    $store = New-Partition -DiskNumber $storeDisk.Number -Size $storeBytes
-    Set-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber -NoDefaultDriveLetter $true -Confirm:$false -ErrorAction Stop
-    $store = Get-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber
-    Format-Volume -Partition $store -FileSystem exFAT -NewFileSystemLabel BACKUP_OS -Confirm:$false -Force | Out-Null
-    $store = Get-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber
-    $storeVolume = Get-Volume -Partition $store -ErrorAction Stop
-    $storeRoot = [string]$storeVolume.Path
-    if ([string]::IsNullOrWhiteSpace($storeRoot)) { throw 'Backup partition formatted, but its volume GUID path is unavailable.' }
-    [IO.Directory]::CreateDirectory([IO.Path]::Combine($storeRoot, 'partimag')) | Out-Null
+    if ($storeMode -in @('1','3')) {
+        Verify-Disk $storeDisk ($storeBytes + 32MB)
+        Write-Host '  Creating backup partition...' -ForegroundColor Gray
+        $store = New-Partition -DiskNumber $storeDisk.Number -Size $storeBytes
+        Set-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber -NoDefaultDriveLetter $true -Confirm:$false -ErrorAction Stop
+        $store = Get-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber
+        Format-Volume -Partition $store -FileSystem exFAT -NewFileSystemLabel BACKUP_OS -Confirm:$false -Force | Out-Null
+        $store = Get-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber
+        $storeVolume = Get-Volume -Partition $store -ErrorAction Stop
+        $storeRoot = [string]$storeVolume.Path
+        if ([string]::IsNullOrWhiteSpace($storeRoot)) { throw 'Backup partition formatted, but its volume GUID path is unavailable.' }
+        [IO.Directory]::CreateDirectory([IO.Path]::Combine($storeRoot, 'partimag')) | Out-Null
+        if ($storeMode -eq '3') {
+            Set-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber -NoDefaultDriveLetter $false -Confirm:$false -ErrorAction Stop
+            Add-PartitionAccessPath -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber -AssignDriveLetter -ErrorAction Stop
+            $store=Get-Partition -DiskNumber $storeDisk.Number -PartitionNumber $store.PartitionNumber
+            if (-not $store.DriveLetter) { throw 'Visible backup partition has no drive letter.' }
+            $warning=[IO.Path]::Combine($storeRoot,'DO-NOT-DELETE-RecoveryBackupOS.txt')
+            [IO.File]::WriteAllText($warning,"IMPORTANT: Do not delete or modify the partimag folder or its contents. They contain the system backup images needed for recovery. Removing or damaging them may prevent system recovery.`r`n",[Text.Encoding]::UTF8)
+            Write-Host ("  Visible backup partition: {0}:" -f $store.DriveLetter)
+        }
+    } else {
+        $store=Get-Partition -DiskNumber $chosenStore.Partition.DiskNumber -PartitionNumber $chosenStore.Partition.PartitionNumber -ErrorAction Stop
+        $volume=Get-Volume -Partition $store -ErrorAction Stop
+        if ([string]$store.Guid -ne [string]$chosenStore.Partition.Guid -or [string](Get-Disk -Number $store.DiskNumber).UniqueId -ne [string]$chosenStore.Disk.UniqueId -or $store.IsBoot -or $store.IsSystem -or $store.IsHidden -or ([string]$store.GptType).Trim('{}') -ine 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7' -or -not $store.DriveLetter -or $volume.FileSystem -notin @('NTFS','exFAT')) { throw 'Existing storage identity changed.' }
+        if ([string](Get-BitLockerVolume -MountPoint ($store.DriveLetter+':') -ErrorAction Stop).VolumeStatus -ne 'FullyDecrypted') { throw 'Existing storage volume is encrypted.' }
+        $storeRoot=[IO.Path]::Combine([string]$volume.Path,'RecoveryBackupOS')
+        if ([IO.Directory]::Exists($storeRoot) -or [IO.File]::Exists($storeRoot)) { throw 'Storage directory already exists.' }
+        [IO.Directory]::CreateDirectory($storeRoot) | Out-Null
+        [IO.File]::WriteAllText([IO.Path]::Combine($storeRoot,'.recovery-backup-os-owner'),$storeToken,[Text.Encoding]::ASCII)
+        [IO.Directory]::CreateDirectory([IO.Path]::Combine($storeRoot,'partimag')) | Out-Null
+        $warningPath=[IO.Path]::Combine([string]$volume.Path,'DO-NOT-DELETE-RecoveryBackupOS.txt')
+        $warningStream=New-Object IO.FileStream($warningPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try {
+            $warningBytes=[Text.Encoding]::UTF8.GetBytes((Get-StoreWarningText $storeToken))
+            $warningStream.Write($warningBytes,0,$warningBytes.Length)
+        } finally { $warningStream.Dispose() }
+    }
     # 卷 GUID 路径无需资源管理器盘符，也不需要设置会影响访问的 IsHidden 属性。
     Write-Host '  Writing boot files...' -ForegroundColor Gray
     $dest = [IO.Path]::Combine($espRoot, 'EFI\clonezilla')
@@ -375,6 +570,8 @@ try {
     [IO.File]::Copy((Join-Path $Project 'resources\live\filesystem.squashfs'), [IO.Path]::Combine($mediaLive, 'filesystem.squashfs'), $false)
     foreach ($name in @('grubx64.efi','start.sh','recovery-runtime.sh')) { [IO.File]::Copy((Join-Path $Project "assets\$name"), [IO.Path]::Combine($dest, $name), $false) }
     $conf = @("system_ptuuid=$systemGuid", $identityLine, "store_partuuid=$(([string]$store.Guid).Trim('{}').ToLowerInvariant())", "partuuid=$(([string]$windows.Guid).Trim('{}').ToLowerInvariant())") -join "`n"
+    if ($storeMode -eq '2') { $conf += "`nstore_mode=existing`nstore_token=$storeToken" }
+    if ($storeMode -eq '3') { $conf += "`nstore_mode=visible" }
     [IO.File]::WriteAllText(([IO.Path]::Combine($dest, 'recovery.conf')), $conf + "`n", [Text.Encoding]::ASCII)
     $grub = @'
 insmod part_gpt
@@ -437,7 +634,8 @@ menuentry 'Backup OS' {
 } catch {
     $code = Get-ProductErrorCode $_.Exception.Message
     Log-Detail $code ($_.Exception.ToString())
-    Write-Host ("`n  Error: " + $code) -ForegroundColor Red
+    Write-Host ("`n  Error: " + $code + ' - ' + (Get-ProductErrorReason $code)) -ForegroundColor Red
+    Write-Host ('  Details: ' + $_.Exception.Message) -ForegroundColor Yellow
     if ($script:DiskChangesStarted) { Write-Warning 'Disk operations may be partially complete; inspect the log before proceeding.' }
     $ExitCode = 1
 }

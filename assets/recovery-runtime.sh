@@ -11,6 +11,10 @@ IMAGE_ROOT=/home/partimag
 PARTS=()
 STORE_UUID=
 STORE_PARTUUID=
+STORE_MODE=dedicated
+STORE_MODE_SEEN=0
+STORE_TOKEN=
+REPOSITORY_ROOT=
 SYSTEM_PTUUID=
 EXPECTED_SERIAL=
 IDENTITY_MODE=serial
@@ -28,6 +32,8 @@ read_config() {
             ''|\#*) continue ;;
             store_uuid) [[ -z $STORE_UUID && $value =~ ^[[:alnum:]-]+$ ]] || fail 'Invalid or duplicate store UUID.'; STORE_UUID=$value ;;
             store_partuuid) [[ -z $STORE_PARTUUID && $value =~ ^[[:xdigit:]-]+$ ]] || fail 'Invalid or duplicate store PARTUUID.'; STORE_PARTUUID=$value ;;
+            store_mode) [[ $STORE_MODE_SEEN == 0 && ( $value == existing || $value == visible ) ]] || fail 'Invalid or duplicate store mode.'; STORE_MODE=$value; STORE_MODE_SEEN=1 ;;
+            store_token) [[ -z $STORE_TOKEN && $value =~ ^[0-9a-f]{32}$ ]] || fail 'Invalid or duplicate store token.'; STORE_TOKEN=$value ;;
             system_ptuuid) [[ -z $SYSTEM_PTUUID && $value =~ ^[[:xdigit:]-]+$ ]] || fail 'Invalid or duplicate system disk GUID.'; SYSTEM_PTUUID=$value ;;
             system_serial) [[ -z $EXPECTED_SERIAL && $value =~ ^[[:alnum:]_.:-]+$ ]] || fail 'Invalid or duplicate disk serial.'; EXPECTED_SERIAL=$value ;;
             identity_mode) [[ $value == ptuuid_only ]] || fail 'Unsupported identity mode.'; IDENTITY_MODE=$value ;;
@@ -39,6 +45,7 @@ read_config() {
     [[ $IDENTITY_MODE == ptuuid_only || -n $EXPECTED_SERIAL ]] || fail 'Disk serial is missing.'
     [[ $IDENTITY_MODE != ptuuid_only || -z $EXPECTED_SERIAL ]] || fail 'Inconsistent serial-free configuration.'
     [[ -z $STORE_UUID || -z $STORE_PARTUUID ]] || fail 'Store must use only one identifier.'
+    if [[ $STORE_MODE == existing ]]; then [[ -n $STORE_PARTUUID && -n $STORE_TOKEN ]] || fail 'Existing store identity missing.'; else [[ -z $STORE_TOKEN ]] || fail 'Unexpected store token.'; fi
 }
 unique_device() {
     local kind=$1 value=$2
@@ -74,8 +81,12 @@ resolve_devices() {
         printf '%s\n' 'WARNING: No usable disk serial; identifying target by disk and partition GUID only.'
     fi
     if [[ -n $STORE_PARTUUID ]]; then STORE=$(unique_device PARTUUID "$STORE_PARTUUID"); else STORE=$(unique_device UUID "$STORE_UUID"); fi
-    [[ $(blkid -s LABEL -o value "$STORE") == BACKUP_OS ]] || fail 'Image store label does not match.'
-    [[ $(blkid -s TYPE -o value "$STORE") == exfat ]] || fail 'Image store is not exFAT.'
+    STORE_FS=$(blkid -s TYPE -o value "$STORE")
+    if [[ $STORE_MODE == dedicated || $STORE_MODE == visible ]]; then
+        [[ $(blkid -s LABEL -o value "$STORE") == BACKUP_OS && $STORE_FS == exfat ]] || fail 'Dedicated store identity or filesystem does not match.'
+    else
+        [[ $STORE_FS == ntfs || $STORE_FS == exfat ]] || fail 'Existing store filesystem unsupported.'
+    fi
     local guid part parent existing
     DEVICES=()
     for guid in "${PARTS[@]}"; do
@@ -94,11 +105,21 @@ mount_repository() {
     mkdir -p "$MOUNT_ROOT" "$IMAGE_ROOT"
     mountpoint -q "$MOUNT_ROOT" && fail 'Store mount point is already in use.'
     mountpoint -q "$IMAGE_ROOT" && fail 'Image mount point is already in use.'
-    mount -t exfat -o rw,nosuid,nodev "$STORE" "$MOUNT_ROOT"
+    if [[ $STORE_FS == ntfs ]]; then
+        command -v ntfs-3g >/dev/null || fail 'ntfs-3g is unavailable.'
+        mount -t ntfs-3g -o rw,nosuid,nodev "$STORE" "$MOUNT_ROOT" || fail 'NTFS store could not be safely mounted; shut down Windows fully and check the volume.'
+    else
+        mount -t exfat -o rw,nosuid,nodev "$STORE" "$MOUNT_ROOT"
+    fi
     STORE_MOUNTED=1
-    [[ ! -L $MOUNT_ROOT/partimag ]] || fail 'Image directory must not be a symbolic link.'
-    mkdir -p "$MOUNT_ROOT/partimag"
-    mount --bind "$MOUNT_ROOT/partimag" "$IMAGE_ROOT"
+    if [[ $STORE_MODE == existing ]]; then
+        REPOSITORY_ROOT="$MOUNT_ROOT/RecoveryBackupOS"
+        [[ -d $REPOSITORY_ROOT && ! -L $REPOSITORY_ROOT && -f $REPOSITORY_ROOT/.recovery-backup-os-owner && ! -L $REPOSITORY_ROOT/.recovery-backup-os-owner ]] || fail 'Owned storage directory missing or unsafe.'
+        [[ $(cat "$REPOSITORY_ROOT/.recovery-backup-os-owner") == "$STORE_TOKEN" ]] || fail 'Storage ownership marker mismatch.'
+    else REPOSITORY_ROOT=$MOUNT_ROOT; fi
+    [[ ! -L $REPOSITORY_ROOT/partimag ]] || fail 'Image directory must not be a symbolic link.'
+    mkdir -p "$REPOSITORY_ROOT/partimag"
+    mount --bind "$REPOSITORY_ROOT/partimag" "$IMAGE_ROOT"
     IMAGE_MOUNTED=1
 }
 cleanup() {
@@ -113,9 +134,9 @@ finalize_session() {
     if (( status == 0 )); then printf '%s\n' 'Task status: completed.'; else printf 'Task status: FAILED or ABORTED (exit %s); inspect the log.\n' "$status"; fi
     exec 1>&3 2>&4
     wait "$LOGGER_PID" || true
-    if (( STORE_MOUNTED )); then
-        mkdir -p "$MOUNT_ROOT/recovery_logs" || true
-        cp -- "$SESSION_LOG" "$MOUNT_ROOT/recovery_logs/" || printf '%s\n' 'Could not save the recovery log to the image store.' >&2
+    if (( STORE_MOUNTED )) && [[ -n $REPOSITORY_ROOT && -d $REPOSITORY_ROOT && ! -L $REPOSITORY_ROOT ]]; then
+        mkdir -p "$REPOSITORY_ROOT/recovery_logs" || true
+        cp -- "$SESSION_LOG" "$REPOSITORY_ROOT/recovery_logs/" || printf '%s\n' 'Could not save the recovery log to the image store.' >&2
         sync
     fi
     cleanup

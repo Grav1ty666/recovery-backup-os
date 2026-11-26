@@ -24,7 +24,7 @@ internal static class Worker {
             }
         } catch (Exception e) {
             Log(e.ToString());
-            Console.WriteLine(e is FileNotFoundException ? "Error: 0xE0010007" : "Error: 0xE0010010");
+            Console.WriteLine(e is FileNotFoundException ? "Error: 0xE0010007 - Required file, path, or image store is missing or inaccessible." : "Error: 0xE0010010 - The Windows launcher could not start the installer.");
         }
         if (result == 0) {
             Console.WriteLine("Finished. This window will close in 5 seconds.");
