@@ -1,29 +1,69 @@
-# Recovery & Backup OS v1.1.0
+# Recovery & Backup OS
 
-Windows 终端部署工具，在 x86-64 UEFI/GPT 设备上部署 Clonezilla 备份和恢复环境。启动器优先调用 Windows Terminal，无法启动时回退到传统控制台。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/visual-identity/v1.0.0/reverse/backup-restore-app.svg">
+  <img src="assets/visual-identity/v1.0.0/original/backup-restore-app.svg" width="40" height="40" alt="Recovery &amp; Backup OS 应用图标">
+</picture>
 
-**使用风险由使用者自行承担。** 分区、UEFI 启动项及恢复操作可能导致数据丢失或无法启动。部分功能尚未完成端到端验证，请先在可擦除的虚拟机中验证，并另行备份重要数据。
+Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezilla 备份和恢复环境。
 
-## 版本下载与更新
+> **使用风险由使用者自行承担。** 分区、UEFI 启动项和恢复操作可能造成数据丢失或无法启动；部分功能尚未完成端到端验证。请先在可擦除虚拟机中测试，并准备独立备份。
 
-所有已发布版本和详细更新说明可在 [GitHub Releases](https://github.com/Grav1ty666/recovery-backup-os/releases) 查看：
+> **当前发布版：v1.0.1。** v1.1.0 因功能测试未通过已撤回。默认分支中可能仍包含未通过测试的后续开发代码；使用稳定源码请切换到 `v1.0.1` 标签。
 
-- [v1.1.0](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.1.0)：新增备份存储方式和已有分区卸载逻辑，启动时优先使用 Windows Terminal。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.1.0.exe)
-- [v1.0.1](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1)：更新安装器与程序的视觉图标。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
-- [v1.0.0](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0)：首个发布版本。 [服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.0.exe)
+## 版本下载
+
+- [v1.0.1 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1) · [文件服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
+- [v1.0.0 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0) · [文件服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.0.exe)
 
 ## 功能
 
-- 支持新建隐藏备份分区、新建可见备份分区，或将镜像存入独立的已有可见数据分区目录。
-- 选择已有分区时，Windows 系统分区不能存放自身的还原镜像；可选分区须符合程序的文件系统、加密和身份检查。备份目录及根目录警告文件不可随意删除。
-- 部署前展示磁盘和压缩方案并要求确认。首次成功备份作为基准，后续备份按时间戳命名；恢复使用基准镜像。
-- 支持基准镜像管理、导出日志和卸载恢复环境。已有分区模式下保留承载数据的分区，删除工具拥有的备份目录和恢复启动分区；专用分区模式移除对应的备份分区和恢复启动分区。
-- 从 Windows 启动菜单选择 Backup OS 或 Recovery OS。此工具不提供整盘或原有 EFI 分区恢复，不支持 Secure Boot 和 BitLocker。
+- **终端部署**：以管理员身份运行，扫描 Windows 系统盘及磁盘空间，选择启动分区和备份分区所在磁盘，并在执行前展示操作计划。
+- **独立恢复环境**：创建恢复 ESP 与独立的 `BACKUP_OS` 备份分区，部署 Clonezilla 启动文件并注册 UEFI 启动项。
+- **自动估算分区容量**：新建备份分区时，按 Windows 已用空间的 60% 计算，并向上取整到 10 GB 档位；实际压缩大小取决于数据，空间不足时备份可能失败。
+- **系统备份**：使用 Clonezilla 备份 Windows 所在分区。首次成功备份设为基准 `partimag/BACKUP_OS`，后续备份使用带时间戳的目录名。
+- **基准恢复**：`Recovery OS` 使用固定基准镜像；找不到基准时中止。恢复会覆盖 Windows 分区，完成后尝试自动重启。
+- **启动菜单**：GRUB 尝试扫描并显示可识别的 UEFI 启动项，默认选择 Windows；也可选择 `Recovery OS` 或 `Backup OS`。多系统和固件兼容性尚待验证。
+- **已有部署管理**：再次运行时检查备份分区，提供基准管理、日志导出和卸载选项。卸载会删除工具分区及其中的备份，相关功能尚待验证。
+- **日志与错误码**：部署过程记录日志；错误码含义见 [ERROR-CODES.txt](ERROR-CODES.txt)。
 
-## 安装
+本工具为开机菜单触发式备份和恢复，**不提供定时自动备份**。
 
-从 [v1.1.0 Release](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.1.0) 下载 `RecoveryBackupOS-Setup-v1.1.0.exe`。安装包已包含 Clonezilla 运行资源，启动部署工具需要管理员权限。安装器的程序卸载只删除应用文件；恢复环境卸载需在终端管理界面中进行。
+## 下载安装程序
 
-## 构建
+- [GitHub Releases 下载](https://github.com/Grav1ty666/recovery-backup-os/releases/latest/download/RecoveryBackupOS-Installer.exe)
+- [文件服务器镜像](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
 
-仓库的 Clonezilla 资源通过 Git LFS 存储。克隆后运行 `git lfs pull`，在 Windows 下执行 `build.ps1`，再使用 Inno Setup 编译 `recovery-setup.iss`。直接下载 GitHub 源码 ZIP 可能只获得 LFS 指针。错误代码说明见 [ERROR-CODES.txt](ERROR-CODES.txt)。
+## 下载
+
+项目的 Clonezilla 运行文件使用 Git LFS 存储。请使用下面的方法下载完整文件：
+
+1. 在 Windows 上安装 [Git](https://git-scm.com/install/windows) 和 [Git LFS](https://git-lfs.com/)。
+2. 打开 Windows Terminal，依次执行：
+
+   ```powershell
+   git lfs install
+   git clone --branch v1.0.1 https://github.com/Grav1ty666/recovery-backup-os.git
+   cd recovery-backup-os
+   git lfs pull
+   ```
+
+3. 确认下载完成，保留整个文件夹，再双击 `RecoveryConsole.exe`。
+
+> 不建议直接使用 GitHub 的 **Code → Download ZIP**：源码压缩包可能只包含 LFS 指针，而不包含完整的 Clonezilla 运行文件。
+
+## 使用
+
+双击 `RecoveryConsole.exe`，按终端提示进行部署。运行需要 Windows PowerShell、.NET Framework 4.x 和管理员权限，不需要 Python。
+
+部署会创建恢复 ESP 和独立的 `BACKUP_OS` 分区；备份镜像保存在 `partimag`，基准镜像名为 `BACKUP_OS`。程序只备份和还原 Windows 所在分区，不提供完整磁盘或 EFI 分区恢复。Secure Boot 和 BitLocker 不受支持。
+
+GRUB 多系统扫描、启动顺序管理、卸载及故障恢复尚未完成端到端验证，不能保证适配所有固件和磁盘布局。更多功能边界见 [README.txt](README.txt)，错误代码见 [ERROR-CODES.txt](ERROR-CODES.txt)。
+
+## 源码和构建
+
+`source` 包含 Windows 部署程序、恢复脚本和 GRUB 扩展源码。`build.ps1` 构建 Windows 可执行文件；GRUB 的构建说明见 `source/build-grub-multios.sh`。项目包含 Clonezilla、Linux、GRUB 和其他第三方组件，其许可和源码分发要求分别适用。
+
+应用图标来自视觉识别系统 `v1.0.0`。默认构建嵌入深色原稿。运行 `./build.ps1 -IconVariant reverse` 可嵌入白色反白。两版 SVG 和 ICO 位于 [`assets/visual-identity/v1.0.0/`](assets/visual-identity/v1.0.0/)。
+
+构建 Windows 安装包时，先通过 Git LFS 取回运行文件，再运行 `build.ps1`，最后用 Inno Setup 编译 `recovery-setup.iss`。安装程序输出到 `dist/`。
