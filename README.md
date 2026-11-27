@@ -13,7 +13,7 @@ Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezill
 
 ## 版本下载
 
-- [v1.0.1 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1) · [文件服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
+- [v1.0.1 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1) · [文件服务器下载](https://github.com/Grav1ty666/recovery-backup-os/releases/download/v1.0.1/RecoveryBackupOS-Installer.exe)
 - [v1.0.0 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0) · [文件服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.0.exe)
 
 ## 功能
@@ -31,8 +31,8 @@ Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezill
 
 ## 下载安装程序
 
-- [GitHub Releases 下载](https://github.com/Grav1ty666/recovery-backup-os/releases/latest/download/RecoveryBackupOS-Installer.exe)
-- [文件服务器镜像](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.1.exe)
+- [GitHub Releases 下载](https://github.com/Grav1ty666/recovery-backup-os/releases/download/v1.0.1/RecoveryBackupOS-Installer.exe)
+- [文件服务器镜像](https://github.com/Grav1ty666/recovery-backup-os/releases/download/v1.0.1/RecoveryBackupOS-Installer.exe)
 
 ## 下载
 
