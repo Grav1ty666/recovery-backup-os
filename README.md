@@ -13,8 +13,8 @@ Windows 终端部署工具，用于在 x86-64 UEFI/GPT 设备上部署 Clonezill
 
 ## 版本下载
 
-- [v1.0.1 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1) · [文件服务器下载](https://github.com/Grav1ty666/recovery-backup-os/releases/download/v1.0.1/RecoveryBackupOS-Installer.exe)
-- [v1.0.0 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0) · [文件服务器下载](https://files.mali040929.dpdns.org/MyPrograms/RecoveryBackupOS/RecoveryBackupOS-Setup-v1.0.0.exe)
+- [v1.0.1 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.1) · [下载 v1.0.1 安装程序](https://github.com/Grav1ty666/recovery-backup-os/releases/download/v1.0.1/RecoveryBackupOS-Installer.exe)
+- [v1.0.0 Release 与更新说明](https://github.com/Grav1ty666/recovery-backup-os/releases/tag/v1.0.0)
 
 ## 功能
 
